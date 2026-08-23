@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+
+# Keep example environment files
+!.env.example
+
+# Generated files
+generated/
+backend/src/generated/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

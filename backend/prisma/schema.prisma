@@ -1,0 +1,251 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  HELD
+  CONFIRMED
+  CANCELLED
+  CANCELLED_DUE_TO_LEAVE
+  COMPLETED
+}
+
+enum UrgencyLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SummaryStatus {
+  SUCCESS
+  FAILED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  REMINDER
+  CANCELLATION
+  LEAVE_CONFLICT
+  MEDICATION_REMINDER
+}
+
+enum CalendarSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+  DELETED
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+
+  patient Patient?
+  doctor  Doctor?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Patient {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  name  String
+  phone String?
+  dob   DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Doctor {
+  id                  String @id @default(uuid())
+  userId              String @unique
+  name                String
+  specialisation      String
+  slotDurationMinutes Int    @default(30)
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workingHours   DoctorWorkingHours[]
+  leaveRecords   DoctorLeave[]
+  appointments   Appointment[]
+  calendarEvents CalendarEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([specialisation])
+}
+
+model DoctorWorkingHours {
+  id        String  @id @default(uuid())
+  doctorId  String
+  weekday   Weekday
+  startTime String
+  endTime   String
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, weekday])
+}
+
+model DoctorLeave {
+  id        String   @id @default(uuid())
+  doctorId  String
+  leaveDate DateTime @db.Date
+  reason    String?
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([doctorId, leaveDate])
+  @@index([doctorId, leaveDate])
+}
+
+model Appointment {
+  id            String            @id @default(uuid())
+  doctorId      String
+  patientId     String
+  slotStart     DateTime
+  slotEnd       DateTime
+  status        AppointmentStatus @default(HELD)
+  holdExpiresAt DateTime?
+
+  doctor  Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  symptomForm      SymptomForm?
+  preVisitSummary  PreVisitSummary?
+  postVisitNotes   PostVisitNotes?
+  postVisitSummary PostVisitSummary?
+  notifications    Notification[]
+  calendarEvent    CalendarEvent?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([doctorId, slotStart], where: raw("status IN ('HELD', 'CONFIRMED')"))
+  @@index([doctorId, slotStart])
+  @@index([patientId, slotStart])
+}
+
+model SymptomForm {
+  id            String   @id @default(uuid())
+  appointmentId String   @unique
+  symptomsText  String
+  submittedAt   DateTime @default(now())
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model PreVisitSummary {
+  id                 String        @id @default(uuid())
+  appointmentId      String        @unique
+  urgency            UrgencyLevel
+  chiefComplaint     String?
+  suggestedQuestions Json?
+  rawLlmResponse     Json?
+  status             SummaryStatus @default(SUCCESS)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model PostVisitNotes {
+  id               String  @id @default(uuid())
+  appointmentId    String  @unique
+  doctorNotes      String
+  prescriptionText String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model PostVisitSummary {
+  id                  String        @id @default(uuid())
+  appointmentId       String        @unique
+  patientFriendlyText String?
+  medicationSchedule  Json?
+  followUpSteps       String?
+  status              SummaryStatus @default(SUCCESS)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id            String             @id @default(uuid())
+  appointmentId String
+  type          NotificationType
+  status        NotificationStatus @default(PENDING)
+  retryCount    Int                @default(0)
+  lastAttemptAt DateTime?
+  errorMessage  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([status, lastAttemptAt])
+  @@index([appointmentId])
+}
+
+model CalendarEvent {
+  id            String             @id @default(uuid())
+  appointmentId String             @unique
+  doctorId      String
+  googleEventId String?
+  syncStatus    CalendarSyncStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctor      Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+  @@index([googleEventId])
+}
