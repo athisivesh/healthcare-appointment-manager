@@ -18,3 +18,5 @@ backend/src/generated/
 # OS
 .DS_Store
 Thumbs.db
+# Frontend build output
+dist/
